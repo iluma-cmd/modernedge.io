@@ -1024,8 +1024,136 @@ async def get_metrics():
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
 
-# Note: HTTP endpoints removed for background worker deployment
-# Frontend should trigger jobs via CLI commands or database operations
+# HTTP endpoints for API service communication
+from pydantic import BaseModel
+from typing import List, Optional
+from uuid import UUID
+
+
+class TriggerJobRequest(BaseModel):
+    """Request model for triggering jobs via HTTP"""
+    lead_ids: Optional[List[str]] = None
+    domains: Optional[List[str]] = None
+    process_all: bool = False
+    skip_existing: bool = True
+    max_concurrent: Optional[int] = None
+    batch_size: Optional[int] = None
+    job_type: str = "enrichment"
+    metadata: Optional[dict] = None
+
+
+class TriggerScrapingJobRequest(BaseModel):
+    """Request model for triggering scraping run jobs via HTTP"""
+    scraping_run_id: str
+    lead_domain: Optional[str] = None
+    max_concurrent: Optional[int] = None
+    batch_size: Optional[int] = None
+
+
+class JobTriggerResponse(BaseModel):
+    """Response model for job triggering"""
+    job_id: str
+    status: str
+    message: str
+    details: dict
+
+
+@health_app.post("/jobs/trigger", response_model=JobTriggerResponse)
+async def trigger_job(request: TriggerJobRequest):
+    """Trigger a job processing request from API service"""
+    if not _service_instance:
+        raise HTTPException(status_code=503, detail="Background service not initialized")
+
+    try:
+        # Convert string UUIDs to UUID objects if provided
+        lead_uuids = None
+        if request.lead_ids:
+            try:
+                lead_uuids = [UUID(lead_id) for lead_id in request.lead_ids]
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid UUID format in lead_ids: {e}")
+
+        # Create the job
+        job = await _service_instance.create_enrichment_job(
+            lead_ids=lead_uuids,
+            domains=request.domains,
+            process_all=request.process_all,
+            skip_existing=request.skip_existing,
+            max_concurrent=request.max_concurrent,
+            batch_size=request.batch_size,
+            job_type=request.job_type,
+            metadata=request.metadata
+        )
+
+        logger.info(f"Job {job.job_id} triggered via HTTP endpoint")
+
+        return JobTriggerResponse(
+            job_id=job.job_id,
+            status=job.status,
+            message="Job triggered successfully and will be processed immediately",
+            details={
+                "created_at": job.created_at.isoformat() if job.created_at else None,
+                "lead_ids": request.lead_ids,
+                "domains": request.domains,
+                "process_all": request.process_all
+            }
+        )
+
+    except ValueError as e:
+        logger.error(f"Job creation failed: {e}")
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to trigger job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger job: {str(e)}")
+
+
+@health_app.post("/jobs/trigger-scraping", response_model=JobTriggerResponse)
+async def trigger_scraping_job(request: TriggerScrapingJobRequest):
+    """Trigger a scraping run job processing request from API service"""
+    if not _service_instance:
+        raise HTTPException(status_code=503, detail="Background service not initialized")
+
+    try:
+        # Validate scraping run UUID
+        try:
+            scraping_uuid = UUID(request.scraping_run_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid scraping_run_id format")
+
+        # Create job with scraping run metadata
+        job_metadata = {
+            "scraping_run_id": str(scraping_uuid),
+            "lead_domain": request.lead_domain
+        }
+
+        job = await _service_instance.create_enrichment_job(
+            process_all=False,  # We'll specify leads via metadata
+            skip_existing=True,
+            max_concurrent=request.max_concurrent,
+            batch_size=request.batch_size,
+            metadata=job_metadata,
+            job_type="scraping-run"
+        )
+
+        logger.info(f"Scraping run job {job.job_id} triggered via HTTP endpoint for run {scraping_uuid}")
+
+        return JobTriggerResponse(
+            job_id=job.job_id,
+            status=job.status,
+            message="Scraping run job triggered successfully and will be processed immediately",
+            details={
+                "scraping_run_id": str(scraping_uuid),
+                "lead_domain": request.lead_domain,
+                "created_at": job.created_at.isoformat() if job.created_at else None
+            }
+        )
+
+    except ValueError as e:
+        logger.error(f"Scraping job creation failed: {e}")
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to trigger scraping job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger scraping job: {str(e)}")
 
 @app.command()
 def trigger_scraping_job(

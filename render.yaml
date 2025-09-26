@@ -1,30 +1,4 @@
 services:
-  # API service for external job triggering
-  - type: web
-    name: email-enrichment-api
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python api_service.py
-    envVars:
-      - key: PYTHONPATH
-        value: /opt/render/project
-      - key: LOG_LEVEL
-        value: INFO
-      - key: LOG_FILE_ENABLED
-        value: true
-      # Database connection
-      - key: NEXT_PUBLIC_SUPABASE_URL
-        sync: false
-      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      # API Keys
-      - key: HUNTER_API_KEY
-        sync: false
-      - key: PERPLEXITY_API_KEY
-        sync: false
-
   # Background worker for email enrichment processing
   - type: worker
     name: email-enrichment-worker
