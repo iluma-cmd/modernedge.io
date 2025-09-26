@@ -13,10 +13,10 @@ from supabase import Client, create_client
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config import get_settings
-from models import Lead, ValidatedEmail, EnrichedLead
+from models import Lead, ValidatedEmail, EnrichedLead, EnrichmentJob
 
 if TYPE_CHECKING:
-    from models import EnrichmentJob
+    pass  # EnrichmentJob already imported above
 
 
 class CircuitBreaker:
@@ -1024,7 +1024,7 @@ class DatabaseClient:
         retry=retry_if_exception_type(Exception),
         reraise=True
     )
-    async def save_job(self, job: "EnrichmentJob") -> None:
+    async def save_job(self, job: EnrichmentJob) -> None:
         """
         Save job to database
 
@@ -1114,7 +1114,7 @@ class DatabaseClient:
             logger.error(f"Failed to update job status: {e}")
             raise
 
-    async def get_job(self, job_id: str) -> Optional["EnrichmentJob"]:
+    async def get_job(self, job_id: str) -> Optional[EnrichmentJob]:
         """Get job by ID"""
         try:
             client = await self.get_client()
@@ -1138,7 +1138,7 @@ class DatabaseClient:
             logger.error(f"Failed to get job {job_id}: {e}")
             return None
 
-    async def get_active_jobs(self) -> List["EnrichmentJob"]:
+    async def get_active_jobs(self) -> List[EnrichmentJob]:
         """Get all active (running/pending) jobs from database"""
         try:
             client = await self.get_client()
@@ -1163,7 +1163,7 @@ class DatabaseClient:
             logger.error(f"Failed to get active jobs from database: {e}")
             return []
 
-    async def get_pending_jobs(self) -> List["EnrichmentJob"]:
+    async def get_pending_jobs(self) -> List[EnrichmentJob]:
         """Get all pending jobs that are ready to be processed"""
         try:
             client = await self.get_client()
