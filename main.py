@@ -499,6 +499,7 @@ class EmailEnrichmentService:
                             logger.warning(f"LinkedIn search failed for {full_name}: {e}")
                     
                     # Update the enriched lead
+                    logger.debug(f"Updating enriched lead {lead._enriched_lead_id} (type: {type(lead._enriched_lead_id)}) with job_id {job_id}")
                     success = await self.db_client.update_enriched_lead_with_email(
                         enriched_lead_id=lead._enriched_lead_id,
                         email=validated_email.email,

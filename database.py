@@ -472,7 +472,7 @@ class DatabaseClient:
         email_webmail: Optional[bool] = None,
         enrichment_source: Optional[str] = None,
         confidence: Optional[int] = None,
-        processed_by_job_id: Optional[UUID] = None
+        processed_by_job_id: Optional[str] = None
     ) -> bool:
         """
         Update an existing enriched lead with email and related information
@@ -496,8 +496,18 @@ class DatabaseClient:
             True if update was successful
         """
         try:
+            # Validate enriched_lead_id
+            if not enriched_lead_id:
+                logger.error("No enriched_lead_id provided for update")
+                return False
+
+            enriched_lead_id_str = str(enriched_lead_id)
+            if not enriched_lead_id_str or len(enriched_lead_id_str) != 36:
+                logger.error(f"Invalid enriched_lead_id format: {enriched_lead_id_str}")
+                return False
+
             client = await self.get_client()
-            
+
             # Prepare update data
             update_data = {
                 "email": email,
@@ -526,7 +536,12 @@ class DatabaseClient:
             if confidence is not None:
                 update_data["confidence"] = confidence
             if processed_by_job_id is not None:
-                update_data["processed_by_job_id"] = str(processed_by_job_id)
+                # Validate processed_by_job_id is a valid UUID string
+                job_id_str = str(processed_by_job_id).strip()
+                if len(job_id_str) != 36:
+                    logger.warning(f"Invalid processed_by_job_id format: {job_id_str}")
+                else:
+                    update_data["processed_by_job_id"] = job_id_str
             
             # Update the enriched lead
             response = await asyncio.to_thread(
