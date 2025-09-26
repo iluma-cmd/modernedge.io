@@ -3,6 +3,7 @@ Supabase database client and operations
 """
 import asyncio
 import json
+import re
 import time
 from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
@@ -536,12 +537,25 @@ class DatabaseClient:
             if confidence is not None:
                 update_data["confidence"] = confidence
             if processed_by_job_id is not None:
-                # Validate processed_by_job_id is a valid UUID string
+                # Extract UUID from job_id string if it contains one
                 job_id_str = str(processed_by_job_id).strip()
-                if len(job_id_str) != 36:
-                    logger.warning(f"Invalid processed_by_job_id format: {job_id_str}")
-                else:
+                
+                # Try to extract UUID from job_id (format: bulk-UUID-timestamp or just UUID)
+                uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+                uuid_match = re.search(uuid_pattern, job_id_str, re.IGNORECASE)
+                
+                if uuid_match:
+                    # Use the extracted UUID
+                    extracted_uuid = uuid_match.group(0)
+                    update_data["processed_by_job_id"] = extracted_uuid
+                    logger.debug(f"Extracted UUID {extracted_uuid} from job_id {job_id_str}")
+                elif len(job_id_str) == 36:
+                    # Already a valid UUID format
                     update_data["processed_by_job_id"] = job_id_str
+                else:
+                    # Store as null if we can't extract a valid UUID
+                    logger.warning(f"Could not extract valid UUID from job_id: {job_id_str}, storing as null")
+                    update_data["processed_by_job_id"] = None
             
             # Update the enriched lead
             response = await asyncio.to_thread(
