@@ -510,7 +510,7 @@ class EmailEnrichmentService:
                         verification_score=validated_email.confidence_score,
                         enrichment_source=f"{validated_email.source}_email_enrichment",
                         confidence=validated_email.confidence_score,
-                        processed_by_job_id=UUID(job_id)
+                        processed_by_job_id=job_id
                     )
                     
                     if success:
