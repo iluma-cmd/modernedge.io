@@ -1,0 +1,30 @@
+services:
+  # Background worker for email enrichment processing
+  - type: worker
+    name: email-enrichment-worker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m main daemon
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_WORKERS
+        value: 3
+      - key: BATCH_SIZE
+        value: 10
+      - key: JOB_POLLING_INTERVAL
+        value: 30
+      - key: LOG_FILE_ENABLED
+        value: true
+      # Database connection
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # API Keys
+      - key: HUNTER_IO_API_KEY
+        sync: false
+      - key: PERPLEXITY_API_KEY
+        sync: false

@@ -1,0 +1,11 @@
+# Optional runtime dependencies
+
+# For Windows service support
+pywin32>=306,<307; sys_platform == "win32"
+
+# For process management
+psutil>=5.9.0,<7.0.0
+
+# For metrics and monitoring
+prometheus-client>=0.17.0,<1.0.0
+
