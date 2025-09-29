@@ -216,6 +216,66 @@ class JobManager:
             logger.error(f"Failed to get pending jobs: {e}")
             return []
 
+    async def check_and_reset_stuck_jobs(self, timeout_minutes: int = 30) -> int:
+        """
+        Check for jobs stuck in 'running' status and reset them to 'pending'
+
+        Args:
+            timeout_minutes: Jobs running longer than this are considered stuck
+
+        Returns:
+            Number of jobs reset
+        """
+        try:
+            db_client = await self._get_db_client()
+            running_jobs = await db_client.get_running_jobs()
+
+            reset_count = 0
+            current_time = time.time()
+            timeout_seconds = timeout_minutes * 60
+
+            for job in running_jobs:
+                # Check if job has been running too long
+                if job.updated_at:
+                    # Convert datetime to timestamp if needed
+                    if isinstance(job.updated_at, float):
+                        time_since_update = current_time - job.updated_at
+                    else:
+                        # Assume it's a datetime object
+                        time_since_update = current_time - job.updated_at.timestamp()
+                elif job.created_at:
+                    # Convert datetime to timestamp if needed
+                    if isinstance(job.created_at, float):
+                        time_since_update = current_time - job.created_at
+                    else:
+                        # Assume it's a datetime object
+                        time_since_update = current_time - job.created_at.timestamp()
+                else:
+                    # No timestamp available, assume it's stuck
+                    time_since_update = timeout_seconds + 1
+
+                if time_since_update > timeout_seconds:
+                    logger.warning(
+                        f"Job {job.job_id} has been running for {time_since_update:.1f} seconds "
+                        f"(timeout: {timeout_seconds}s), resetting to pending"
+                    )
+
+                    # Reset to pending status
+                    await self.update_job_status(job.job_id, "pending")
+                    reset_count += 1
+
+                    # Release any existing lock for this job
+                    self.release_job_lock(job.job_id)
+
+            if reset_count > 0:
+                logger.info(f"Reset {reset_count} stuck jobs back to pending status")
+
+            return reset_count
+
+        except Exception as e:
+            logger.error(f"Failed to check and reset stuck jobs: {e}")
+            return 0
+
     async def cancel_job(self, job_id: str) -> bool:
         """
         Cancel a job if it's pending or running

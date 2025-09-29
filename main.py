@@ -145,7 +145,7 @@ class EmailEnrichmentService:
         try:
             if self.db_client:
                 stats = await asyncio.wait_for(
-                    self.db_client.get_processing_stats(), 
+                    self.db_client.get_processing_stats(verbose=False),
                     timeout=5.0
                 )
                 health_status["components"]["database"] = {
@@ -890,6 +890,12 @@ class EmailEnrichmentService:
                 loop_count += 1
                 logger.debug(f"Background service loop iteration #{loop_count}")
                 try:
+                    # Check for stuck running jobs and reset them
+                    logger.debug("Checking for stuck running jobs...")
+                    reset_count = await self.job_manager.check_and_reset_stuck_jobs()
+                    if reset_count > 0:
+                        logger.info(f"Reset {reset_count} stuck jobs back to pending status")
+
                     # Check for pending jobs and process them
                     logger.debug("Checking for pending jobs...")
                     pending_jobs = await self.job_manager.get_pending_jobs()
@@ -1019,7 +1025,7 @@ async def get_metrics():
 
     try:
         # Get database stats
-        stats = await _service_instance.db_client.get_processing_stats()
+        stats = await _service_instance.db_client.get_processing_stats(verbose=True)
 
         # Get job queue status
         queue_status = await _service_instance.job_manager.get_job_queue_status()
@@ -1602,7 +1608,7 @@ def stats():
     async def run():
         db_client = await get_db_client()
         try:
-            stats = await db_client.get_processing_stats()
+            stats = await db_client.get_processing_stats(verbose=True)
             typer.echo("Database Statistics:")
             typer.echo(f"  Total leads: {stats['total_leads']}")
             typer.echo(f"  Total enriched leads: {stats['total_enriched_leads']}")
