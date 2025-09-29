@@ -5,7 +5,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, TYPE_CHECKING
 from uuid import UUID
 
@@ -1209,7 +1209,9 @@ class DatabaseClient:
                 for job_data in recent_jobs_response.data:
                     if isinstance(job_data.get("progress"), str):
                         job_data["progress"] = json.loads(job_data["progress"])
-                    recent_jobs.append(EnrichmentJob(**job_data))
+                    # Convert to EnrichmentJob and then to dict for JSON serialization
+                    job_obj = EnrichmentJob(**job_data)
+                    recent_jobs.append(job_obj.model_dump(mode='json'))
 
             return {
                 "status_counts": status_counts,
@@ -1220,6 +1222,56 @@ class DatabaseClient:
         except Exception as e:
             logger.error(f"Failed to get job queue status: {e}")
             return {"error": str(e)}
+
+    async def check_stuck_jobs(self, timeout_minutes: int = 10) -> int:
+        """
+        Check for jobs that have been running but haven't updated progress recently.
+        Reset stuck jobs back to pending status.
+
+        Args:
+            timeout_minutes: Minutes of inactivity before considering a job stuck
+
+        Returns:
+            Number of stuck jobs reset
+        """
+        try:
+            client = await self.get_client()
+
+            # Calculate cutoff time (jobs not updated since this time are considered stuck)
+            cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+
+            # Find running jobs that haven't been updated recently
+            stuck_jobs_response = await asyncio.to_thread(
+                client.table("jobs")
+                .select("job_id")
+                .eq("status", "running")
+                .lt("updated_at", cutoff_time.isoformat())
+                .execute
+            )
+
+            stuck_count = 0
+            if stuck_jobs_response.data:
+                for job_data in stuck_jobs_response.data:
+                    job_id = job_data["job_id"]
+
+                    # Reset job to pending with error message
+                    await self.update_job_status(
+                        job_id=job_id,
+                        status="pending",
+                        error_message=f"Job was stuck (no progress update for {timeout_minutes}+ minutes) and reset to pending"
+                    )
+
+                    logger.warning(f"Reset stuck job {job_id} back to pending after {timeout_minutes} minutes of inactivity")
+                    stuck_count += 1
+
+            if stuck_count > 0:
+                logger.info(f"Reset {stuck_count} stuck jobs back to pending status")
+
+            return stuck_count
+
+        except Exception as e:
+            logger.error(f"Failed to check for stuck jobs: {e}")
+            return 0
 
     async def close(self):
         """Close database connections"""

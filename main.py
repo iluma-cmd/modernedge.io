@@ -915,6 +915,14 @@ class EmailEnrichmentService:
                                     "failed",
                                     error_message=str(e)
                                 )
+
+                    # Check for stuck jobs (jobs that haven't updated progress in 10+ minutes)
+                    try:
+                        stuck_count = await self.db_client.check_stuck_jobs(timeout_minutes=10)
+                        if stuck_count > 0:
+                            logger.info(f"Reset {stuck_count} stuck jobs back to pending status")
+                    except Exception as e:
+                        logger.error(f"Error checking for stuck jobs: {e}")
                     else:
                         # No pending jobs, wait before checking again
                         logger.info(f"No pending jobs found, checking again in {self.settings.job_polling_interval} seconds... (loop #{loop_count})")
