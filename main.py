@@ -857,7 +857,7 @@ class EmailEnrichmentService:
                 stats = await self.process_leads_batch(
                     leads,
                     job.job_id,
-                    max_concurrent=job.max_concurrent,
+                    max_concurrent=self.settings.max_workers,  # Use config setting instead of job setting
                     batch_size=job.batch_size,
                     job_metadata=job.metadata
                 )
