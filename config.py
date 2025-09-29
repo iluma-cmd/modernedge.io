@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Service Configuration
     log_level: str = Field("INFO", env="LOG_LEVEL")
-    max_workers: int = Field(1, env="MAX_WORKERS")  # Sequential processing to respect Hunter API rate limits
+    max_workers: int = Field(1, env="MAX_WORKERS")  # Sequential processing with 8-second gaps between API calls
     batch_size: int = Field(10, env="BATCH_SIZE")
     request_timeout: int = Field(30, env="REQUEST_TIMEOUT")
 
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     verification_confidence_threshold: int = Field(65, env="VERIFICATION_CONFIDENCE_THRESHOLD")
 
     # Rate Limiting
-    hunter_rate_limit: int = Field(3, env="HUNTER_RATE_LIMIT")  # requests per minute (extremely conservative)
+    hunter_rate_limit: int = Field(7, env="HUNTER_RATE_LIMIT")  # requests per minute (with 8-second gaps)
     perplexity_rate_limit: int = Field(30, env="PERPLEXITY_RATE_LIMIT")  # requests per minute
 
     # Database Configuration

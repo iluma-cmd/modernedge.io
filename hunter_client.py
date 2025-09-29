@@ -53,7 +53,7 @@ class HunterClient:
         return self._client
 
     async def _enforce_rate_limit(self):
-        """Enforce rate limiting to stay within API limits"""
+        """Enforce rate limiting with minimum 8-second gap between requests"""
         import time as time_module
 
         async with self._rate_limit_lock:
@@ -65,7 +65,16 @@ class HunterClient:
                 if current_time - t < 60
             ]
 
-            # Check if we're at the limit
+            # Enforce minimum 8-second gap between requests
+            if self._request_times:
+                last_request_time = max(self._request_times)
+                time_since_last_request = current_time - last_request_time
+                if time_since_last_request < 8.0:  # 8 seconds minimum gap
+                    wait_time = 8.0 - time_since_last_request
+                    logger.debug(f"Enforcing 8-second gap, waiting {wait_time:.2f} seconds")
+                    await asyncio.sleep(wait_time)
+
+            # Check if we're at the overall rate limit
             if len(self._request_times) >= self.rate_limit:
                 # Wait until we can make another request
                 oldest_request = min(self._request_times)
@@ -94,7 +103,7 @@ class HunterClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=60),  # Balanced for domain search (500/minute limit)
+        wait=wait_exponential(multiplier=3, min=10, max=120),  # Very conservative for domain search
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, HunterRateLimitError))
     )
     async def domain_search(self, domain: str) -> Optional[HunterDomainResponse]:
@@ -285,7 +294,7 @@ class HunterClient:
 
                 # Add delay between verifications to respect rate limits
                 if i < len(emails) - 1:  # Don't delay after the last email
-                    await asyncio.sleep(8.0)  # 8 second delay = max ~7 emails per minute
+                    await asyncio.sleep(15.0)  # 15 second delay = max ~4 emails per minute
 
             except Exception as e:
                 logger.error(f"Failed to verify email {email}: {e}")
@@ -299,7 +308,7 @@ class HunterClient:
                 ))
                 # Still add delay even on error to prevent rapid-fire retries
                 if i < len(emails) - 1:
-                    await asyncio.sleep(8.0)
+                    await asyncio.sleep(15.0)
 
         logger.info(f"Batch verification complete: {successful_verifications}/{len(emails)} emails deliverable")
 
