@@ -22,7 +22,7 @@ services:
         value: "30 days"
       # Service Configuration
       - key: MAX_WORKERS
-        value: 3
+        value: 1
       - key: BATCH_SIZE
         value: 10
       - key: JOB_POLLING_INTERVAL
@@ -38,7 +38,7 @@ services:
         value: 65
       # Rate Limiting
       - key: HUNTER_RATE_LIMIT
-        value: 10
+        value: 3
       - key: PERPLEXITY_RATE_LIMIT
         value: 30
       # Database Configuration
