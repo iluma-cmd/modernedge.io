@@ -226,7 +226,7 @@ class JobManager:
     async def update_job_status(
         self,
         job_id: str,
-        status: str,
+        status: Optional[str] = None,
         progress: Optional[dict] = None,
         error_message: Optional[str] = None,
         **stats_updates
@@ -251,7 +251,10 @@ class JobManager:
                 error_message=error_message,
                 **stats_updates
             )
-            logger.info(f"Updated job {job_id} status to {status}")
+            if status:
+                logger.info(f"Updated job {job_id} status to {status}")
+            else:
+                logger.info(f"Updated job {job_id} progress")
         except Exception as e:
             logger.error(f"Failed to update job {job_id} status: {e}")
             raise

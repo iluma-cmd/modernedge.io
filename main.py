@@ -724,9 +724,10 @@ class EmailEnrichmentService:
                             "total": len(leads),
                             "percentage": round(processed_count / len(leads) * 100, 2)
                         }
+                        logger.info(f"Progress update: updating job {job_id} progress (progress: {processed_count}/{len(leads)})")
                         await self.job_manager.update_job_status(
                             job_id,
-                            "running",
+                            None,  # Don't change status, only update progress
                             progress=progress
                         )
 
@@ -789,6 +790,8 @@ class EmailEnrichmentService:
             logger.warning(f"Failed to acquire lock for job {job.job_id}")
             raise ValueError(f"Job {job.job_id} is already locked")
 
+        job_start_time = time.time()  # Track timing for debugging
+
         try:
             await self._initialize_clients()
 
@@ -840,6 +843,10 @@ class EmailEnrichmentService:
             # Process leads with batching
             try:
                 # Update job with total leads count and mark as running when processing actually starts
+                time_to_running = time.time() - job_start_time
+                logger.info(f"About to set job {job.job_id} to running - leads found: {len(leads)}")
+                logger.info(f"Job {job.job_id} ready for processing in {time_to_running:.3f}s, setting status to running")
+
                 await self.job_manager.update_job_status(
                     job.job_id,
                     "running",

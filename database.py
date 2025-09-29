@@ -1071,7 +1071,7 @@ class DatabaseClient:
     async def update_job_status(
         self,
         job_id: str,
-        status: str,
+        status: Optional[str] = None,
         progress: Optional[dict] = None,
         error_message: Optional[str] = None,
         **stats_updates
@@ -1089,7 +1089,10 @@ class DatabaseClient:
         try:
             client = await self.get_client()
 
-            update_data = {"status": status}
+            update_data = {}
+
+            if status:
+                update_data["status"] = status
 
             if progress:
                 update_data["progress"] = json.dumps(progress)
@@ -1115,7 +1118,10 @@ class DatabaseClient:
                 client.table("jobs").update(update_data).eq("job_id", job_id).execute
             )
 
-            logger.info(f"Updated job {job_id} status to {status}")
+            if status:
+                logger.info(f"Updated job {job_id} status to {status}")
+            else:
+                logger.info(f"Updated job {job_id} progress")
 
         except Exception as e:
             logger.error(f"Failed to update job status: {e}")
