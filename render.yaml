@@ -46,10 +46,10 @@ services:
         value: 10
       - key: DB_CONNECTION_TIMEOUT
         value: 30
-    # Service Configuration
-    - key: SERVICE_NAME
-      value: "email-enrichment-service"
-    # Development settings
+      # Service Configuration
+      - key: SERVICE_NAME
+        value: "email-enrichment-service"
+      # Development settings
       - key: DEBUG_MODE
         value: false
       - key: DRY_RUN
