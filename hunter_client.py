@@ -94,7 +94,7 @@ class HunterClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
+        wait=wait_exponential(multiplier=2, min=4, max=60),  # Balanced for domain search (500/minute limit)
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, HunterRateLimitError))
     )
     async def domain_search(self, domain: str) -> Optional[HunterDomainResponse]:
@@ -283,6 +283,10 @@ class HunterClient:
                     successful_verifications += 1
                 logger.debug(f"Verified {email}: {result.result}")
 
+                # Add delay between verifications to respect rate limits
+                if i < len(emails) - 1:  # Don't delay after the last email
+                    await asyncio.sleep(8.0)  # 8 second delay = max ~7 emails per minute
+
             except Exception as e:
                 logger.error(f"Failed to verify email {email}: {e}")
                 # Return a failed verification result
@@ -293,11 +297,9 @@ class HunterClient:
                     gibberish=False,
                     role=False
                 ))
-
-            # Add a small delay between emails to be more conservative with rate limiting
-            # Skip delay for the last email
-            if i < len(emails) - 1:
-                await asyncio.sleep(0.5)
+                # Still add delay even on error to prevent rapid-fire retries
+                if i < len(emails) - 1:
+                    await asyncio.sleep(8.0)
 
         logger.info(f"Batch verification complete: {successful_verifications}/{len(emails)} emails deliverable")
 

@@ -825,7 +825,8 @@ class EmailEnrichmentService:
                     raise ValueError("Job has no processing criteria specified")
 
                 if not leads:
-                    logger.warning(f"No leads found for job {job.job_id}")
+                    logger.warning(f"No leads found for job {job.job_id} - marking as completed")
+                    logger.info(f"Job {job.job_id} completed (no leads to process)")
                     await self.job_manager.update_job_status(job.job_id, "completed")
                     return ProcessingStats()
 
@@ -861,17 +862,56 @@ class EmailEnrichmentService:
                     job_metadata=job.metadata
                 )
 
-                # Update final job statistics
-                await self.job_manager.update_job_status(
-                    job.job_id,
-                    "completed",
-                    processed_leads=stats.leads_processed,
-                    failed_leads=stats.failed_leads,
-                    created_emails=stats.emails_validated,
-                    api_calls_hunter=stats.api_calls_hunter,
-                    api_calls_perplexity=stats.api_calls_perplexity,
-                    processing_time_seconds=stats.processing_time_seconds
-                )
+                # Check if processing failed due to API rate limits or other critical errors
+                critical_errors = [e for e in stats.errors if 'rate limit' in e.lower() or 'timeout' in e.lower()]
+                api_failures = stats.api_calls_hunter + stats.api_calls_perplexity
+                success_rate = stats.leads_processed / max(len(leads), 1)
+
+                if critical_errors and len(critical_errors) > len(leads) * 0.5:  # More than 50% critical errors
+                    logger.error(f"Job {job.job_id} failed due to excessive API errors ({len(critical_errors)}/{len(leads)})")
+                    await self.job_manager.update_job_status(
+                        job.job_id,
+                        "failed",
+                        processed_leads=stats.leads_processed,
+                        failed_leads=stats.failed_leads,
+                        created_emails=stats.emails_validated,
+                        api_calls_hunter=stats.api_calls_hunter,
+                        api_calls_perplexity=stats.api_calls_perplexity,
+                        processing_time_seconds=stats.processing_time_seconds,
+                        error_message=f"Failed due to API rate limits and errors: {len(critical_errors)} critical errors"
+                    )
+                elif api_failures == 0 and stats.leads_processed == 0:  # No API calls made and nothing processed
+                    logger.error(f"Job {job.job_id} failed - no API calls made and no leads processed")
+                    await self.job_manager.update_job_status(
+                        job.job_id,
+                        "failed",
+                        error_message="No API calls were made and no leads were processed"
+                    )
+                elif success_rate < 0.1:  # Less than 10% success rate
+                    logger.warning(f"Job {job.job_id} completed with very low success rate ({success_rate:.1%})")
+                    await self.job_manager.update_job_status(
+                        job.job_id,
+                        "completed",
+                        processed_leads=stats.leads_processed,
+                        failed_leads=stats.failed_leads,
+                        created_emails=stats.emails_validated,
+                        api_calls_hunter=stats.api_calls_hunter,
+                        api_calls_perplexity=stats.api_calls_perplexity,
+                        processing_time_seconds=stats.processing_time_seconds,
+                        error_message=f"Low success rate: {success_rate:.1%}"
+                    )
+                else:
+                    # Normal completion
+                    await self.job_manager.update_job_status(
+                        job.job_id,
+                        "completed",
+                        processed_leads=stats.leads_processed,
+                        failed_leads=stats.failed_leads,
+                        created_emails=stats.emails_validated,
+                        api_calls_hunter=stats.api_calls_hunter,
+                        api_calls_perplexity=stats.api_calls_perplexity,
+                        processing_time_seconds=stats.processing_time_seconds
+                    )
 
                 # Log final statistics
                 logger.info("=" * 50)
@@ -929,7 +969,7 @@ class EmailEnrichmentService:
                     # Check for pending jobs and process them
                     logger.debug("Checking for pending jobs...")
                     pending_jobs = await self.job_manager.get_pending_jobs()
-                    logger.debug(f"Found {len(pending_jobs)} pending jobs")
+                    logger.info(f"Checked for pending jobs: found {len(pending_jobs)}")
 
                     if pending_jobs:
                         logger.info(f"Found {len(pending_jobs)} pending job(s) to process")

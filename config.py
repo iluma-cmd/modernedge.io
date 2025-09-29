@@ -36,15 +36,13 @@ class Settings(BaseSettings):
     verification_confidence_threshold: int = Field(65, env="VERIFICATION_CONFIDENCE_THRESHOLD")
 
     # Rate Limiting
-    hunter_rate_limit: int = Field(30, env="HUNTER_RATE_LIMIT")  # requests per minute (conservative to avoid rate limits)
+    hunter_rate_limit: int = Field(10, env="HUNTER_RATE_LIMIT")  # requests per minute (very conservative with 8s delays)
     perplexity_rate_limit: int = Field(30, env="PERPLEXITY_RATE_LIMIT")  # requests per minute
 
     # Database Configuration
     db_connection_pool_size: int = Field(10, env="DB_CONNECTION_POOL_SIZE")
     db_connection_timeout: int = Field(30, env="DB_CONNECTION_TIMEOUT")
 
-    # Caching (Redis)
-    redis_url: Optional[str] = Field(None, env="REDIS_URL")
     cache_ttl: int = Field(3600, env="CACHE_TTL")  # 1 hour default
 
     # Processing Configuration
