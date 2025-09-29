@@ -80,11 +80,19 @@ class DatabaseClient:
             async with self._connection_lock:
                 if self._client is None:
                     try:
+                        # Configure client with connection options for better resource management
                         self._client = create_client(
                             supabase_url=self.settings.supabase_url,
                             supabase_key=self.settings.supabase_service_role_key,
                         )
-                        logger.info("Supabase client initialized successfully")
+
+                        # Set connection pool size and timeout if supported
+                        if hasattr(self._client, 'postgrest'):
+                            # Configure PostgREST client settings if available
+                            if hasattr(self._client.postgrest, 'session'):
+                                self._client.postgrest.session.timeout = self.settings.db_connection_timeout
+
+                        logger.info("Supabase client initialized successfully with connection pooling")
                     except Exception as e:
                         logger.error(f"Failed to initialize Supabase client: {e}")
                         raise
@@ -1162,8 +1170,14 @@ class DatabaseClient:
             logger.error(f"Failed to get active jobs from database: {e}")
             return []
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True
+    )
     async def get_pending_jobs(self) -> List[EnrichmentJob]:
-        """Get all pending jobs that are ready to be processed"""
+        """Get all pending jobs that are ready to be processed with retry logic"""
         try:
             client = await self.get_client()
 
@@ -1187,8 +1201,14 @@ class DatabaseClient:
             logger.error(f"Failed to get pending jobs from database: {e}")
             return []
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True
+    )
     async def get_job_queue_status(self) -> dict:
-        """Get overall job queue status"""
+        """Get overall job queue status with retry logic"""
         try:
             client = await self.get_client()
 

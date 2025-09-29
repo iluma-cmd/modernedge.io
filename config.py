@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     verification_confidence_threshold: int = Field(65, env="VERIFICATION_CONFIDENCE_THRESHOLD")
 
     # Rate Limiting
-    hunter_rate_limit: int = Field(50, env="HUNTER_RATE_LIMIT")  # requests per minute (relaxed for paid plans)
+    hunter_rate_limit: int = Field(30, env="HUNTER_RATE_LIMIT")  # requests per minute (conservative to avoid rate limits)
     perplexity_rate_limit: int = Field(30, env="PERPLEXITY_RATE_LIMIT")  # requests per minute
 
     # Database Configuration

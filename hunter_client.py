@@ -54,8 +54,10 @@ class HunterClient:
 
     async def _enforce_rate_limit(self):
         """Enforce rate limiting to stay within API limits"""
+        import time as time_module
+
         async with self._rate_limit_lock:
-            current_time = asyncio.get_event_loop().time()
+            current_time = time_module.time()
 
             # Remove requests older than 1 minute
             self._request_times = [
@@ -69,7 +71,7 @@ class HunterClient:
                 oldest_request = min(self._request_times)
                 wait_time = 60 - (current_time - oldest_request)
                 if wait_time > 0:
-                    logger.warning(f"Rate limit reached, waiting {wait_time:.2f} seconds")
+                    logger.warning(f"Rate limit reached ({len(self._request_times)} requests in last minute), waiting {wait_time:.2f} seconds")
                     await asyncio.sleep(wait_time)
 
             # Record this request
@@ -92,7 +94,7 @@ class HunterClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=60),
+        wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, HunterRateLimitError))
     )
     async def domain_search(self, domain: str) -> Optional[HunterDomainResponse]:
@@ -190,7 +192,7 @@ class HunterClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=60),
+        wait=wait_exponential(multiplier=2, min=5, max=120),  # More conservative for rate limits
         retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, HunterRateLimitError))
     )
     async def verify_email(self, email: str) -> VerificationResult:
@@ -273,7 +275,7 @@ class HunterClient:
         verified_emails = []
         successful_verifications = 0
 
-        for email in emails:
+        for i, email in enumerate(emails):
             try:
                 result = await self.verify_email(email)
                 verified_emails.append(result)
@@ -291,6 +293,11 @@ class HunterClient:
                     gibberish=False,
                     role=False
                 ))
+
+            # Add a small delay between emails to be more conservative with rate limiting
+            # Skip delay for the last email
+            if i < len(emails) - 1:
+                await asyncio.sleep(0.5)
 
         logger.info(f"Batch verification complete: {successful_verifications}/{len(emails)} emails deliverable")
 

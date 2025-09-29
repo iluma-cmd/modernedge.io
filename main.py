@@ -9,6 +9,7 @@ import sys
 import time
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -45,6 +46,11 @@ class EmailEnrichmentService:
         self._is_healthy = False
         self._startup_complete = False
         self._background_task = None
+
+        # Health check caching to reduce database load
+        self._health_cache = {}
+        self._health_cache_time = 0
+        self._health_cache_ttl = 30  # Cache health status for 30 seconds
 
     async def _initialize_clients(self):
         """Initialize all API clients and job manager"""
@@ -161,25 +167,34 @@ class EmailEnrichmentService:
             }
             health_status["status"] = "unhealthy"
 
-        # Check job manager
-        try:
-            if self.job_manager:
-                queue_status = await asyncio.wait_for(
-                    self.job_manager.get_job_queue_status(),
-                    timeout=5.0
-                )
-                health_status["components"]["job_manager"] = {
-                    "status": "healthy",
-                    "queue_status": queue_status
+        # Check job manager with caching to reduce database load
+        current_time = time.time()
+        if current_time - self._health_cache_time > self._health_cache_ttl:
+            try:
+                if self.job_manager:
+                    queue_status = await asyncio.wait_for(
+                        self.job_manager.get_job_queue_status(),
+                        timeout=5.0
+                    )
+                    self._health_cache["job_manager"] = {
+                        "status": "healthy",
+                        "queue_status": queue_status
+                    }
+                else:
+                    self._health_cache["job_manager"] = {"status": "not_initialized"}
+
+                self._health_cache_time = current_time
+
+            except Exception as e:
+                self._health_cache["job_manager"] = {
+                    "status": "unhealthy",
+                    "error": str(e)
                 }
-            else:
-                health_status["components"]["job_manager"] = {"status": "not_initialized"}
-        except Exception as e:
-            health_status["components"]["job_manager"] = {
-                "status": "unhealthy",
-                "error": str(e)
-            }
-            health_status["status"] = "unhealthy"
+                self._health_cache_time = current_time
+                health_status["status"] = "unhealthy"
+
+        # Use cached job manager status
+        health_status["components"]["job_manager"] = self._health_cache.get("job_manager", {"status": "unknown"})
 
         # Check API clients
         health_status["components"]["hunter_client"] = {
@@ -756,8 +771,18 @@ class EmailEnrichmentService:
         # First check if job is already running (defensive check)
         current_job = await self.job_manager.get_job(job.job_id)
         if current_job and current_job.status == "running":
-            logger.warning(f"Job {job.job_id} is already running, skipping")
-            raise ValueError(f"Job {job.job_id} is already running")
+            # Check if the job has been running too long (stuck job)
+            if current_job.updated_at:
+                time_running = (datetime.utcnow() - current_job.updated_at).total_seconds()
+                if time_running > 600:  # 10 minutes (matching background service logic)
+                    logger.warning(f"Job {job.job_id} has been running for {time_running:.0f} seconds, resetting to pending")
+                    await self.job_manager.update_job_status(job.job_id, "pending")
+                else:
+                    logger.warning(f"Job {job.job_id} is already running, skipping")
+                    raise ValueError(f"Job {job.job_id} is already running")
+            else:
+                logger.warning(f"Job {job.job_id} is already running (no timestamp), skipping")
+                raise ValueError(f"Job {job.job_id} is already running")
 
         # Acquire job lock to prevent concurrent execution
         if not await self.job_manager.acquire_job_lock(job.job_id):
@@ -801,13 +826,6 @@ class EmailEnrichmentService:
                     await self.job_manager.update_job_status(job.job_id, "completed")
                     return ProcessingStats()
 
-                # Update job with total leads count
-                await self.job_manager.update_job_status(
-                    job.job_id,
-                    "running",
-                    total_leads=len(leads)
-                )
-
                 logger.info(f"Job {job.job_id} will process {len(leads)} leads")
 
             except Exception as e:
@@ -821,6 +839,13 @@ class EmailEnrichmentService:
 
             # Process leads with batching
             try:
+                # Update job with total leads count and mark as running when processing actually starts
+                await self.job_manager.update_job_status(
+                    job.job_id,
+                    "running",
+                    total_leads=len(leads)
+                )
+
                 stats = await self.process_leads_batch(
                     leads,
                     job.job_id,
