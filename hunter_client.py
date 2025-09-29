@@ -257,7 +257,7 @@ class HunterClient:
 
     async def verify_emails_batch(self, emails: List[str]) -> List[VerificationResult]:
         """
-        Verify multiple emails concurrently with rate limiting
+        Verify multiple emails sequentially to respect rate limits
 
         Args:
             emails: List of email addresses to verify
@@ -268,36 +268,30 @@ class HunterClient:
         if not emails:
             return []
 
-        logger.info(f"Verifying batch of {len(emails)} emails")
+        logger.info(f"Verifying batch of {len(emails)} emails sequentially")
 
-        # Create semaphore to limit concurrent requests
-        semaphore = asyncio.Semaphore(self.settings.max_workers)
-
-        async def verify_with_semaphore(email: str) -> VerificationResult:
-            async with semaphore:
-                return await self.verify_email(email)
-
-        # Process emails concurrently
-        tasks = [verify_with_semaphore(email) for email in emails]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Handle exceptions and collect results
         verified_emails = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Failed to verify email {emails[i]}: {result}")
+        successful_verifications = 0
+
+        for email in emails:
+            try:
+                result = await self.verify_email(email)
+                verified_emails.append(result)
+                if result.result == "deliverable":
+                    successful_verifications += 1
+                logger.debug(f"Verified {email}: {result.result}")
+
+            except Exception as e:
+                logger.error(f"Failed to verify email {email}: {e}")
                 # Return a failed verification result
                 verified_emails.append(VerificationResult(
-                    email=emails[i],
+                    email=email,
                     result="unknown",
                     score=0,
                     gibberish=False,
                     role=False
                 ))
-            else:
-                verified_emails.append(result)
 
-        successful_verifications = len([r for r in verified_emails if r.result == "deliverable"])
         logger.info(f"Batch verification complete: {successful_verifications}/{len(emails)} emails deliverable")
 
         return verified_emails

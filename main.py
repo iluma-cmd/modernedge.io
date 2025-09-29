@@ -753,14 +753,21 @@ class EmailEnrichmentService:
         Returns:
             Processing statistics
         """
+        # First check if job is already running (defensive check)
+        current_job = await self.job_manager.get_job(job.job_id)
+        if current_job and current_job.status == "running":
+            logger.warning(f"Job {job.job_id} is already running, skipping")
+            raise ValueError(f"Job {job.job_id} is already running")
+
         # Acquire job lock to prevent concurrent execution
         if not await self.job_manager.acquire_job_lock(job.job_id):
-            raise ValueError(f"Job {job.job_id} is already running")
+            logger.warning(f"Failed to acquire lock for job {job.job_id}")
+            raise ValueError(f"Job {job.job_id} is already locked")
 
         try:
             await self._initialize_clients()
 
-            # Update job status to running
+            # Update job status to running (this is the critical claim operation)
             await self.job_manager.update_job_status(job.job_id, "running")
 
             logger.info(f"Starting job {job.job_id}")
@@ -917,14 +924,16 @@ class EmailEnrichmentService:
                                 )
 
                     # Check for stuck jobs (jobs that haven't updated progress in 10+ minutes)
+                    # This should run regardless of whether there are pending jobs or not
                     try:
                         stuck_count = await self.db_client.check_stuck_jobs(timeout_minutes=10)
                         if stuck_count > 0:
                             logger.info(f"Reset {stuck_count} stuck jobs back to pending status")
                     except Exception as e:
                         logger.error(f"Error checking for stuck jobs: {e}")
-                    else:
-                        # No pending jobs, wait before checking again
+
+                    # If no pending jobs were found, wait before checking again
+                    if not pending_jobs:
                         logger.info(f"No pending jobs found, checking again in {self.settings.job_polling_interval} seconds... (loop #{loop_count})")
                         try:
                             await asyncio.wait_for(
