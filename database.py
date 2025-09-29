@@ -1006,24 +1006,10 @@ class DatabaseClient:
 
     async def create_jobs_table_if_not_exists(self) -> None:
         """
-        Verify that the jobs table exists - table should already be created via migrations
+        Jobs table should already exist - this method is kept for compatibility
         """
-        try:
-            client = await self.get_client()
-
-            # Check if table exists
-            result = await asyncio.to_thread(client.table("information_schema.tables").select("table_name").eq("table_schema", "public").eq("table_name", "jobs").execute)
-            table_exists = len(result.data) > 0
-
-            if table_exists:
-                logger.debug("Jobs table verified - already exists")
-            else:
-                logger.warning("Jobs table not found! Please ensure migrations have been run.")
-                logger.info("Run the SQL in migrations/create_jobs_table.sql in your Supabase SQL editor")
-
-        except Exception as e:
-            logger.warning(f"Could not verify jobs table existence: {e}")
-            logger.info("Assuming jobs table exists - if not, run migrations manually")
+        # Since the table already exists (as confirmed by user), we don't need to verify
+        logger.debug("Jobs table assumed to exist - proceeding with service startup")
 
     @retry(
         stop=stop_after_attempt(3),

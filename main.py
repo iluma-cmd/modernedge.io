@@ -884,40 +884,48 @@ class EmailEnrichmentService:
             logger.info("Background service initialized and ready")
             
             # Main service loop
+            logger.info("Entering main background service loop")
+            loop_count = 0
             while not self._shutdown_event.is_set():
+                loop_count += 1
+                logger.debug(f"Background service loop iteration #{loop_count}")
                 try:
                     # Check for pending jobs and process them
+                    logger.debug("Checking for pending jobs...")
                     pending_jobs = await self.job_manager.get_pending_jobs()
-                    
+                    logger.debug(f"Found {len(pending_jobs)} pending jobs")
+
                     if pending_jobs:
-                        logger.info(f"Found {len(pending_jobs)} pending job(s)")
-                        
+                        logger.info(f"Found {len(pending_jobs)} pending job(s) to process")
+
                         for job in pending_jobs:
                             if self._shutdown_event.is_set():
+                                logger.info("Shutdown requested during job processing")
                                 break
-                                
+
                             try:
                                 logger.info(f"Processing job {job.job_id}")
                                 await self.execute_job(job)
+                                logger.info(f"Completed processing job {job.job_id}")
                             except Exception as e:
                                 logger.error(f"Failed to process job {job.job_id}: {e}")
                                 # Mark job as failed
                                 await self.job_manager.update_job_status(
-                                    job.job_id, 
-                                    "failed", 
+                                    job.job_id,
+                                    "failed",
                                     error_message=str(e)
                                 )
                     else:
                         # No pending jobs, wait before checking again
-                        logger.debug("No pending jobs, sleeping...")
+                        logger.info(f"No pending jobs found, checking again in {self.settings.job_polling_interval} seconds... (loop #{loop_count})")
                         try:
                             await asyncio.wait_for(
-                                self._shutdown_event.wait(), 
+                                self._shutdown_event.wait(),
                                 timeout=self.settings.job_polling_interval
                             )
                         except asyncio.TimeoutError:
                             continue  # Normal timeout, continue loop
-                            
+
                 except asyncio.CancelledError:
                     logger.info("Background service cancelled")
                     break
@@ -1334,7 +1342,7 @@ def daemon():
     
     async def run_daemon():
         setup_production_logging()
-        
+
         service = EmailEnrichmentService()
         try:
             await service.run_background_service()
@@ -1342,6 +1350,7 @@ def daemon():
             logger.info("Daemon shutdown requested")
         except Exception as e:
             logger.error(f"Daemon failed: {e}")
+            logger.info("Daemon will exit due to critical error")
             raise typer.Exit(1)
     
     asyncio.run(run_daemon())

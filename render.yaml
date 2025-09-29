@@ -1,10 +1,10 @@
 services:
   # Background worker for email enrichment processing
-  - type: worker
-    name: email-enrichment-worker
+  - type: web
+    name: email-enrichment-service
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py serve --host 0.0.0.0 --port 8000
+    startCommand: python main.py serve --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHONPATH
@@ -46,14 +46,10 @@ services:
         value: 10
       - key: DB_CONNECTION_TIMEOUT
         value: 30
-      # Background Service Configuration
-      - key: HEALTH_CHECK_PORT
-        value: 8000
-      - key: HEALTH_CHECK_HOST
-        value: "0.0.0.0"
-      - key: SERVICE_NAME
-        value: "email-enrichment-service"
-      # Development settings
+    # Service Configuration
+    - key: SERVICE_NAME
+      value: "email-enrichment-service"
+    # Development settings
       - key: DEBUG_MODE
         value: false
       - key: DRY_RUN
