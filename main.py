@@ -890,12 +890,6 @@ class EmailEnrichmentService:
                 loop_count += 1
                 logger.debug(f"Background service loop iteration #{loop_count}")
                 try:
-                    # Check for stuck running jobs and reset them
-                    logger.debug("Checking for stuck running jobs...")
-                    reset_count = await self.job_manager.check_and_reset_stuck_jobs()
-                    if reset_count > 0:
-                        logger.info(f"Reset {reset_count} stuck jobs back to pending status")
-
                     # Check for pending jobs and process them
                     logger.debug("Checking for pending jobs...")
                     pending_jobs = await self.job_manager.get_pending_jobs()

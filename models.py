@@ -235,7 +235,6 @@ class EnrichmentJob(BaseModel):
     batch_size: Optional[int] = None
     metadata: Optional[dict] = Field(default_factory=dict)  # job metadata (e.g., scraping_run_id)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
     status: str = "pending"  # pending, running, paused, completed, failed, cancelled
     progress: dict = Field(default_factory=dict)  # progress tracking
     error_message: Optional[str] = None

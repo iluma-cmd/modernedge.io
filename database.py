@@ -1081,7 +1081,7 @@ class DatabaseClient:
         try:
             client = await self.get_client()
 
-            update_data = {"status": status, "updated_at": "now()"}
+            update_data = {"status": status}
 
             if progress:
                 update_data["progress"] = json.dumps(progress)
@@ -1185,31 +1185,6 @@ class DatabaseClient:
 
         except Exception as e:
             logger.error(f"Failed to get pending jobs from database: {e}")
-            return []
-
-    async def get_running_jobs(self) -> List[EnrichmentJob]:
-        """Get all jobs currently in 'running' status"""
-        try:
-            client = await self.get_client()
-
-            # Query for running jobs only
-            response = await asyncio.to_thread(
-                client.table("jobs").select("*").eq("status", "running").order("created_at").execute
-            )
-
-            jobs = []
-            if response.data:
-                for job_data in response.data:
-                    # Convert progress from JSON string if needed
-                    if isinstance(job_data.get("progress"), str):
-                        job_data["progress"] = json.loads(job_data["progress"])
-
-                    jobs.append(EnrichmentJob(**job_data))
-
-            return jobs
-
-        except Exception as e:
-            logger.error(f"Failed to get running jobs from database: {e}")
             return []
 
     async def get_job_queue_status(self) -> dict:
