@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Service Configuration
     log_level: str = Field("INFO", env="LOG_LEVEL")
-    max_workers: int = Field(5, env="MAX_WORKERS")
+    max_workers: int = Field(1, env="MAX_WORKERS")  # Sequential processing to respect Hunter API rate limits
     batch_size: int = Field(10, env="BATCH_SIZE")
     request_timeout: int = Field(30, env="REQUEST_TIMEOUT")
 
