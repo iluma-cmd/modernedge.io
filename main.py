@@ -767,9 +767,6 @@ class EmailEnrichmentService:
         try:
             await self._initialize_clients()
 
-            # Update job status to running (this is the critical claim operation)
-            await self.job_manager.update_job_status(job.job_id, "running")
-
             logger.info(f"Starting job {job.job_id}")
 
             # Fetch enriched leads to process based on job criteria
