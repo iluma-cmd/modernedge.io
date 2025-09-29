@@ -4,20 +4,60 @@ services:
     name: email-enrichment-worker
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m main daemon
+    startCommand: python main.py serve --host 0.0.0.0 --port 8000
+    healthCheckPath: /health
     envVars:
       - key: PYTHONPATH
         value: /opt/render/project
+      # Logging
       - key: LOG_LEVEL
         value: INFO
+      - key: LOG_FILE_ENABLED
+        value: true
+      - key: LOG_FILE_PATH
+        value: /var/log
+      - key: LOG_ROTATION
+        value: "10 MB"
+      - key: LOG_RETENTION
+        value: "30 days"
+      # Service Configuration
       - key: MAX_WORKERS
         value: 3
       - key: BATCH_SIZE
         value: 10
       - key: JOB_POLLING_INTERVAL
         value: 30
-      - key: LOG_FILE_ENABLED
-        value: true
+      - key: REQUEST_TIMEOUT
+        value: 30
+      # Processing Limits
+      - key: MAX_EMAILS_PER_DOMAIN
+        value: 3
+      - key: HUNTER_CONFIDENCE_THRESHOLD
+        value: 70
+      - key: VERIFICATION_CONFIDENCE_THRESHOLD
+        value: 65
+      # Rate Limiting
+      - key: HUNTER_RATE_LIMIT
+        value: 10
+      - key: PERPLEXITY_RATE_LIMIT
+        value: 30
+      # Database Configuration
+      - key: DB_CONNECTION_POOL_SIZE
+        value: 10
+      - key: DB_CONNECTION_TIMEOUT
+        value: 30
+      # Background Service Configuration
+      - key: HEALTH_CHECK_PORT
+        value: 8000
+      - key: HEALTH_CHECK_HOST
+        value: "0.0.0.0"
+      - key: SERVICE_NAME
+        value: "email-enrichment-service"
+      # Development settings
+      - key: DEBUG_MODE
+        value: false
+      - key: DRY_RUN
+        value: false
       # Database connection
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false

@@ -1006,46 +1006,24 @@ class DatabaseClient:
 
     async def create_jobs_table_if_not_exists(self) -> None:
         """
-        Ensure jobs table exists with proper schema
-        Note: This is for documentation - actual table creation should be done in Supabase
+        Verify that the jobs table exists - table should already be created via migrations
         """
-        # This method documents the required jobs table schema
-        # In a production environment, you'd use migrations or Supabase SQL editor
+        try:
+            client = await self.get_client()
 
-        jobs_table_schema = """
-        CREATE TABLE IF NOT EXISTS jobs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            job_id TEXT NOT NULL UNIQUE,
-            lead_ids JSONB,
-            domains JSONB,
-            process_all BOOLEAN DEFAULT FALSE,
-            skip_existing BOOLEAN DEFAULT TRUE,
-            max_concurrent INTEGER,
-            batch_size INTEGER,
-            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
-            progress JSONB DEFAULT '{}',
-            error_message TEXT,
-            started_at TIMESTAMP WITH TIME ZONE,
-            completed_at TIMESTAMP WITH TIME ZONE,
-            total_leads INTEGER DEFAULT 0,
-            processed_leads INTEGER DEFAULT 0,
-            failed_leads INTEGER DEFAULT 0,
-            created_emails INTEGER DEFAULT 0,
-            api_calls_hunter INTEGER DEFAULT 0,
-            api_calls_perplexity INTEGER DEFAULT 0,
-            processing_time_seconds FLOAT DEFAULT 0.0,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
+            # Check if table exists
+            result = await asyncio.to_thread(client.table("information_schema.tables").select("table_name").eq("table_schema", "public").eq("table_name", "jobs").execute)
+            table_exists = len(result.data) > 0
 
-        -- Indexes for performance
-        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-        CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_jobs_job_id ON jobs(job_id);
-        """
+            if table_exists:
+                logger.debug("Jobs table verified - already exists")
+            else:
+                logger.warning("Jobs table not found! Please ensure migrations have been run.")
+                logger.info("Run the SQL in migrations/create_jobs_table.sql in your Supabase SQL editor")
 
-        logger.info("Jobs table schema documentation - create this table in Supabase SQL editor")
-        logger.debug(f"Required schema:\\n{jobs_table_schema}")
+        except Exception as e:
+            logger.warning(f"Could not verify jobs table existence: {e}")
+            logger.info("Assuming jobs table exists - if not, run migrations manually")
 
     @retry(
         stop=stop_after_attempt(3),
