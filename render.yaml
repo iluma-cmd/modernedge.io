@@ -15,7 +15,7 @@ services:
       - key: LOG_FILE_ENABLED
         value: true
       - key: LOG_FILE_PATH
-        value: /var/log
+        value: ./logs
       - key: LOG_ROTATION
         value: "10 MB"
       - key: LOG_RETENTION
