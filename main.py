@@ -419,12 +419,11 @@ class EmailEnrichmentService:
             validated_emails = []
 
             # Step 1: Try Hunter.io domain search first
-            hunter_found_generic_only = False
             try:
                 hunter_response = await self.hunter_client.domain_search(lead.domain)
 
                 if hunter_response and hunter_response.emails:
-                        # Validate Hunter emails (this filters out generic emails)
+                        # Validate Hunter emails (will use generic emails as fallback if no personal emails found)
                         hunter_validated = await self.email_validator.validate_hunter_emails(
                             hunter_response.emails,
                             existing_emails
@@ -432,20 +431,6 @@ class EmailEnrichmentService:
                         validated_emails.extend(hunter_validated)
                         stats.emails_found_hunter = len(hunter_validated)
                         stats.api_calls_hunter += 1
-
-                        # Check if Hunter found emails but they were all generic or impersonal
-                        if len(hunter_response.emails) > 0 and len(hunter_validated) == 0:
-                            hunter_found_generic_only = True
-                            logger.info(f"Hunter found only generic/impersonal emails for {lead.domain}, will try Perplexity")
-                        elif len(hunter_validated) > 0:
-                            # Check if Hunter found any emails with personal information
-                            has_personal_info = any(
-                                getattr(email, 'first_name', None) or getattr(email, 'last_name', None)
-                                for email in hunter_validated
-                            )
-                            if not has_personal_info:
-                                logger.info(f"Hunter emails lack personal information for {lead.domain}, will also try Perplexity")
-                                # Don't set hunter_found_generic_only but allow Perplexity fallback for better data
 
                         logger.info(f"Found {len(hunter_validated)} valid emails via Hunter for {lead.domain}")
 
@@ -456,11 +441,10 @@ class EmailEnrichmentService:
             # Check for shutdown between API calls
             await self._check_shutdown()
 
-            # Step 2: Try Perplexity if Hunter failed, found only generic emails, didn't find enough emails, or emails lack personal info
+            # Step 2: Try Perplexity if Hunter failed, didn't find enough emails, or emails lack personal info
             should_try_perplexity = (
                 not validated_emails or  # No emails from Hunter
-                len(validated_emails) < self.settings.max_emails_per_domain or  # Not enough emails
-                hunter_found_generic_only  # Only generic emails found
+                len(validated_emails) < self.settings.max_emails_per_domain  # Not enough emails
             )
 
             if should_try_perplexity:

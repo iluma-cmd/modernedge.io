@@ -159,11 +159,17 @@ class EmailValidator:
         # First, filter out emails we should skip and prioritize personal emails
         personal_emails = []
         other_emails = []
+        generic_emails = []
 
         for email_result in emails:
             logger.debug(f"Processing email_result: {email_result}, email attr: {getattr(email_result, 'email', 'NO EMAIL')}")
-            # Skip generic emails entirely
-            if self._should_skip_email(email_result.email, existing_emails):
+            # Skip duplicate emails
+            if email_result.email.lower() in [e.lower() for e in existing_emails if e]:
+                continue
+
+            # Check if this is a generic email
+            if self._should_skip_email(email_result.email, []):  # Don't check existing_emails again
+                generic_emails.append(email_result)
                 continue
 
             # Separate personal emails from others
@@ -172,8 +178,13 @@ class EmailValidator:
             else:
                 other_emails.append(email_result)
 
-        # Prioritize personal emails, but include others if we don't have enough personal ones
-        filtered_emails = personal_emails + other_emails[:max(0, 5 - len(personal_emails))]  # Max 5 emails total
+        # Prioritize personal emails, then other emails, and finally generic emails as fallback
+        filtered_emails = personal_emails + other_emails
+
+        # If we have no personal or other emails, use generic emails as fallback
+        if not filtered_emails and generic_emails:
+            logger.info(f"No personal emails found, using {len(generic_emails)} generic emails as fallback")
+            filtered_emails = generic_emails[:3]  # Limit generic emails to 3
 
         if not filtered_emails:
             logger.debug("No Hunter emails to validate after filtering")
@@ -185,11 +196,17 @@ class EmailValidator:
 
         for email_result in filtered_emails:
             # Create validated email directly from Hunter results
-            # Assume high confidence since these came directly from Hunter domain search
+            # Adjust confidence based on email type
+            base_confidence = 85  # High confidence for Hunter-sourced emails
+            is_generic = email_result in generic_emails
+
+            # Lower confidence for generic emails
+            confidence_score = 60 if is_generic else base_confidence
+
             validated_email = ValidatedEmail(
                 email=email_result.email,
                 source="hunter_direct",
-                confidence_score=85,  # High confidence for Hunter-sourced emails
+                confidence_score=confidence_score,
                 email_type=self._determine_email_type_from_result(email_result),
                 hunter_status="deliverable",  # Assume deliverable since found by Hunter
                 status="active",
@@ -199,7 +216,7 @@ class EmailValidator:
             )
 
             validated_emails.append(validated_email)
-            logger.debug(f"Processed Hunter email: {email_result.email} (deliverable)")
+            logger.debug(f"Processed Hunter email: {email_result.email} (deliverable, confidence: {confidence_score})")
 
         logger.info(f"Processed {len(validated_emails)}/{len(filtered_emails)} Hunter emails")
         return validated_emails
@@ -226,32 +243,56 @@ class EmailValidator:
 
         logger.debug(f"Validating {len(emails)} generated emails")
 
-        # First, filter out emails we should skip
-        filtered_emails = []
-        for generated_email in emails:
-            if not self._should_skip_email(generated_email.email, existing_emails):
-                filtered_emails.append(generated_email)
+        # First, separate personal and generic emails
+        personal_emails = []
+        generic_emails = []
 
-        if not filtered_emails:
+        for generated_email in emails:
+            # Skip duplicates
+            if generated_email.email.lower() in [e.lower() for e in existing_emails if e]:
+                continue
+
+            # Check if this is a generic email
+            if self._should_skip_email(generated_email.email, []):  # Don't check existing_emails again
+                generic_emails.append(generated_email)
+            else:
+                personal_emails.append(generated_email)
+
+        # Start with personal emails
+        emails_to_verify = personal_emails
+
+        # If we have no personal emails, use generic emails as fallback
+        if not emails_to_verify and generic_emails:
+            logger.info(f"No personal emails found, using {len(generic_emails)} generic emails as fallback")
+            emails_to_verify = generic_emails[:3]  # Limit generic emails to 3
+
+        if not emails_to_verify:
             logger.debug("No generated emails to validate after filtering")
             return []
 
         # Verify emails in batches
-        email_addresses = [e.email for e in filtered_emails]
+        email_addresses = [e.email for e in emails_to_verify]
         verification_results = await hunter_client.verify_emails_batch(email_addresses)
 
         # Process results
-        for generated_email, verification in zip(filtered_emails, verification_results):
+        for generated_email, verification in zip(emails_to_verify, verification_results):
             # Check if verification meets criteria
             if not hunter_client.is_verification_acceptable(verification):
                 logger.debug(f"Generated email {generated_email.email} failed verification criteria")
                 continue
 
+            # Determine if this is a generic email
+            is_generic = generated_email in generic_emails
+
+            # Adjust confidence for generic emails
+            base_confidence = verification.score
+            confidence_score = max(50, base_confidence * 0.8) if is_generic else base_confidence  # 20% reduction for generic
+
             # Create validated email
             validated_email_data = {
                 "email": generated_email.email,
                 "source": "perplexity_generated",
-                "confidence_score": verification.score,
+                "confidence_score": confidence_score,
                 "email_type": self._determine_email_type(generated_email.email, verification),
                 "hunter_status": verification.result,
                 "status": "active"
@@ -264,9 +305,9 @@ class EmailValidator:
             validated_email = ValidatedEmail(**validated_email_data)
 
             validated_emails.append(validated_email)
-            logger.debug(f"Validated generated email: {generated_email.email} ({verification.result})")
+            logger.debug(f"Validated generated email: {generated_email.email} ({verification.result}, confidence: {confidence_score})")
 
-        logger.info(f"Validated {len(validated_emails)}/{len(filtered_emails)} generated emails")
+        logger.info(f"Validated {len(validated_emails)}/{len(emails_to_verify)} generated emails")
         return validated_emails
 
     async def validate_emails_combined(
