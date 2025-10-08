@@ -129,6 +129,8 @@ class ValidatedEmail(BaseModel):
     hunter_status: str  # "deliverable", "undeliverable", "risky", "unknown"
     verified_at: datetime = Field(default_factory=datetime.utcnow)
     status: str = "active"
+    # Full verification payload for downstream use
+    verification: Optional[VerificationResult] = None
 
     # Person information (from Hunter API)
     first_name: Optional[str] = None

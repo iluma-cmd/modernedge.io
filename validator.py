@@ -190,35 +190,43 @@ class EmailValidator:
             logger.debug("No Hunter emails to validate after filtering")
             return []
 
-        # For emails from Hunter domain search, skip additional verification
-        # since Hunter already validated them to be on the domain
-        logger.debug(f"Processing {len(filtered_emails)} Hunter-sourced emails (skipping verification)")
+        # Verify Hunter-sourced emails to avoid saving undeliverables
+        logger.debug(f"Verifying {len(filtered_emails)} Hunter-sourced emails")
 
-        for email_result in filtered_emails:
-            # Create validated email directly from Hunter results
-            # Adjust confidence based on email type
-            base_confidence = 85  # High confidence for Hunter-sourced emails
+        email_addresses = [e.email for e in filtered_emails]
+        verification_results = await hunter_client.verify_emails_batch(email_addresses)
+
+        for email_result, verification in zip(filtered_emails, verification_results):
+            # Only accept emails that meet verification criteria
+            if not hunter_client.is_verification_acceptable(verification):
+                logger.debug(f"Hunter email {email_result.email} failed verification ({verification.result}, score: {verification.score})")
+                continue
+
             is_generic = email_result in generic_emails
 
-            # Lower confidence for generic emails
-            confidence_score = 60 if is_generic else base_confidence
+            # Adjust confidence for generic emails similar to generated flow
+            base_confidence = verification.score
+            confidence_score = max(50, base_confidence * 0.8) if is_generic else base_confidence
 
             validated_email = ValidatedEmail(
                 email=email_result.email,
                 source="hunter_direct",
                 confidence_score=confidence_score,
                 email_type=self._determine_email_type_from_result(email_result),
-                hunter_status="deliverable",  # Assume deliverable since found by Hunter
+                hunter_status=verification.result,
                 status="active",
                 first_name=email_result.first_name,
                 last_name=email_result.last_name,
-                position=email_result.position
+                position=email_result.position,
+                verification=verification
             )
 
             validated_emails.append(validated_email)
-            logger.debug(f"Processed Hunter email: {email_result.email} (deliverable, confidence: {confidence_score})")
+            logger.debug(
+                f"Validated Hunter email: {email_result.email} ({verification.result}, confidence: {confidence_score})"
+            )
 
-        logger.info(f"Processed {len(validated_emails)}/{len(filtered_emails)} Hunter emails")
+        logger.info(f"Validated {len(validated_emails)}/{len(filtered_emails)} Hunter emails")
         return validated_emails
 
     async def validate_generated_emails(self, emails: List[GeneratedEmail], existing_emails: List[str] = None) -> List[ValidatedEmail]:
@@ -295,7 +303,8 @@ class EmailValidator:
                 "confidence_score": confidence_score,
                 "email_type": self._determine_email_type(generated_email.email, verification),
                 "hunter_status": verification.result,
-                "status": "active"
+                "status": "active",
+                "verification": verification
             }
 
             # Only set verified_at if it's available and not None
@@ -382,7 +391,8 @@ class EmailValidator:
                 confidence_score=verification.score,
                 email_type=self._determine_email_type(email, verification),
                 hunter_status=verification.result,
-                status="active"
+                status="active",
+                verification=verification
             )
 
             logger.debug(f"Validated single email: {email} ({verification.result})")
